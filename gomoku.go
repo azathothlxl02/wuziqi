@@ -3,6 +3,7 @@ package main
 import (
 	"image/color"
 	"log"
+	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -11,6 +12,7 @@ import (
 const (
 	boardSize  = 15
 	tileSize   = 40
+	margin     = tileSize / 2
 	windowSize = boardSize * tileSize
 )
 
@@ -45,8 +47,8 @@ func (g *Game) Update() error {
 
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
 		x, y := ebiten.CursorPosition()
-		row := y / tileSize
-		col := x / tileSize
+		col := int(math.Round(float64(x-margin) / float64(tileSize)))
+		row := int(math.Round(float64(y-margin) / float64(tileSize)))
 		if row >= 0 && row < boardSize && col >= 0 && col < boardSize {
 			if g.board[row][col] == Empty {
 				g.board[row][col] = g.currentTurn
@@ -63,21 +65,32 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	// Draw board
+	// Draw background
+	screen.Fill(color.RGBA{222, 184, 135, 255}) // light wood color
+
+	// Draw grid lines
+	for i := 0; i < boardSize; i++ {
+		start := float64(margin)
+		end := float64(windowSize - margin)
+		pos := float64(margin + i*tileSize)
+		ebitenutil.DrawLine(screen, start, pos, end, pos, color.Black)
+		ebitenutil.DrawLine(screen, pos, start, pos, end, color.Black)
+	}
+
+	// Draw stones
 	for i := 0; i < boardSize; i++ {
 		for j := 0; j < boardSize; j++ {
-			x := j * tileSize
-			y := i * tileSize
-			ebitenutil.DrawRect(screen, float64(x), float64(y), tileSize-1, tileSize-1, color.RGBA{220, 180, 120, 255})
+			cx := float64(margin + j*tileSize)
+			cy := float64(margin + i*tileSize)
 			if g.board[i][j] == Black {
-				ebitenutil.DrawRect(screen, float64(x+10), float64(y+10), 20, 20, color.Black)
+				drawCircle(screen, cx, cy, 16, color.Black)
 			} else if g.board[i][j] == White {
-				ebitenutil.DrawRect(screen, float64(x+10), float64(y+10), 20, 20, color.White)
+				drawCircle(screen, cx, cy, 16, color.White)
 			}
 		}
 	}
 
-	// Show game over message
+	// Show game status
 	if g.gameOver {
 		msg := "Black wins!"
 		if g.winner == White {
@@ -90,6 +103,18 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			turn = "White"
 		}
 		ebitenutil.DebugPrintAt(screen, "Current turn: "+turn, 10, windowSize-30)
+	}
+}
+
+func drawCircle(screen *ebiten.Image, cx, cy float64, r float64, clr color.Color) {
+	for dy := -r; dy <= r; dy++ {
+		for dx := -r; dx <= r; dx++ {
+			x := cx + dx
+			y := cy + dy
+			if dx*dx+dy*dy <= r*r {
+				screen.Set(int(x), int(y), clr)
+			}
+		}
 	}
 }
 
