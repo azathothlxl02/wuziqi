@@ -21,6 +21,7 @@ type Game struct {
 	state       GameState
 	playMode    PlayMode
 	moveHistory [][2]int
+	pendingAI   bool
 }
 
 func NewGame() *Game {
@@ -44,32 +45,41 @@ func (g *Game) Update() error {
 	case StateModeSelect:
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			_, y := ebiten.CursorPosition()
+
+			centerY := WindowHeight / 2
+			spacing := 60
+			itemHeight := 32
+			startY := centerY - spacing*2 + spacing*1
+
 			switch {
-			case y >= 200 && y < 250:
+			case y >= startY && y < startY+itemHeight:
 				g.Reset(HumanVsHuman)
-			case y >= 270 && y < 320:
+			case y >= startY+spacing && y < startY+spacing+itemHeight:
 				g.Reset(HumanVsAI)
-			case y >= 340 && y < 390:
+			case y >= startY+2*spacing && y < startY+2*spacing+itemHeight:
 				os.Exit(0)
 			}
 		}
+
 	case StatePlaying:
+		if g.pendingAI {
+			row, col := GetAIMove(g.board)
+			g.placeStoneAt(row, col)
+			g.pendingAI = false
+			return nil
+		}
+
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			x, y := ebiten.CursorPosition()
 			if x >= WindowWidth-120 && y >= WindowHeight-50 {
 				g.undoMove()
 				return nil
 			}
+
 			if g.playMode == HumanVsAI && g.currentTurn == White {
 				return nil
 			}
 
-			g.handlePlayerMove()
-		}
-		if g.playMode == HumanVsAI && g.currentTurn == White {
-			row, col := GetRandomAIMove(g.board)
-			g.placeStoneAt(row, col)
-		} else if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			g.handlePlayerMove()
 		}
 	case StateGameOver:
@@ -102,6 +112,10 @@ func (g *Game) placeStoneAt(row, col int) {
 		g.state = StateGameOver
 	} else {
 		g.currentTurn = 3 - g.currentTurn
+
+		if g.playMode == HumanVsAI && g.currentTurn == White {
+			g.pendingAI = true
+		}
 	}
 }
 
@@ -214,10 +228,24 @@ func (g *Game) drawGameOver(screen *ebiten.Image) {
 }
 
 func (g *Game) drawModeSelect(screen *ebiten.Image) {
-	text.Draw(screen, "Gomoku", utils.MplusFont, 150, 120, color.White)
-	text.Draw(screen, "[1] Human vs Human", utils.MplusFont, 140, 230, color.White)
-	text.Draw(screen, "[2] Human vs AI", utils.MplusFont, 140, 300, color.White)
-	text.Draw(screen, "[3] Exit", utils.MplusFont, 140, 370, color.White)
+	centerX := WindowWidth / 2
+	centerY := WindowHeight / 2
+	spacing := 60
+	itemHeight := 32
+
+	menuItems := []string{
+		"Gomoku - 五子棋", // title
+		"[1] Human vs Human",
+		"[2] Human vs AI",
+		"[3] Exit",
+	}
+
+	for i, item := range menuItems {
+		bounds := text.BoundString(utils.MplusFont, item)
+		x := centerX - bounds.Dx()/2
+		y := centerY - spacing*2 + i*spacing + itemHeight/2
+		text.Draw(screen, item, utils.MplusFont, x, y, color.White)
+	}
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
