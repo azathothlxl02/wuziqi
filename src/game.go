@@ -20,6 +20,7 @@ type Game struct {
 	moves       int
 	state       GameState
 	playMode    PlayMode
+	moveHistory [][2]int
 }
 
 func NewGame() *Game {
@@ -53,6 +54,18 @@ func (g *Game) Update() error {
 			}
 		}
 	case StatePlaying:
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			x, y := ebiten.CursorPosition()
+			if x >= WindowWidth-120 && y >= WindowHeight-50 {
+				g.undoMove()
+				return nil
+			}
+			if g.playMode == HumanVsAI && g.currentTurn == White {
+				return nil
+			}
+
+			g.handlePlayerMove()
+		}
 		if g.playMode == HumanVsAI && g.currentTurn == White {
 			row, col := GetRandomAIMove(g.board)
 			g.placeStoneAt(row, col)
@@ -78,7 +91,9 @@ func (g *Game) handlePlayerMove() {
 
 func (g *Game) placeStoneAt(row, col int) {
 	g.board[row][col] = g.currentTurn
+	g.moveHistory = append(g.moveHistory, [2]int{row, col})
 	g.moves++
+
 	if g.checkWin(row, col) {
 		g.winner = g.currentTurn
 		g.state = StateGameOver
@@ -150,6 +165,23 @@ func (g *Game) drawBoard(screen *ebiten.Image) {
 		}
 	}
 }
+func (g *Game) undoMove() {
+	if g.state != StatePlaying || len(g.moveHistory) == 0 {
+		return
+	}
+	steps := 1
+	if g.playMode == HumanVsAI && len(g.moveHistory) >= 2 {
+		steps = 2
+	}
+
+	for i := 0; i < steps; i++ {
+		last := g.moveHistory[len(g.moveHistory)-1]
+		g.board[last[0]][last[1]] = Empty
+		g.moveHistory = g.moveHistory[:len(g.moveHistory)-1]
+		g.moves--
+		g.currentTurn = 3 - g.currentTurn
+	}
+}
 
 func (g *Game) drawStatus(screen *ebiten.Image) {
 	turnText := "Current Turn: "
@@ -163,6 +195,10 @@ func (g *Game) drawStatus(screen *ebiten.Image) {
 		col = color.White
 	}
 	ebitenutil.DrawCircle(screen, cx, cy, StoneRadius, col)
+
+	btnX, btnY := WindowWidth-120, WindowHeight-50
+	ebitenutil.DrawRect(screen, float64(btnX), float64(btnY), 100, 30, color.RGBA{180, 180, 180, 255})
+	text.Draw(screen, "Undo", utils.MplusFont, btnX+20, btnY+22, color.Black)
 }
 
 func (g *Game) drawGameOver(screen *ebiten.Image) {
@@ -178,7 +214,7 @@ func (g *Game) drawGameOver(screen *ebiten.Image) {
 }
 
 func (g *Game) drawModeSelect(screen *ebiten.Image) {
-	text.Draw(screen, "Gomoku - 五子棋", utils.MplusFont, 150, 120, color.White)
+	text.Draw(screen, "Gomoku", utils.MplusFont, 150, 120, color.White)
 	text.Draw(screen, "[1] Human vs Human", utils.MplusFont, 140, 230, color.White)
 	text.Draw(screen, "[2] Human vs AI", utils.MplusFont, 140, 300, color.White)
 	text.Draw(screen, "[3] Exit", utils.MplusFont, 140, 370, color.White)
