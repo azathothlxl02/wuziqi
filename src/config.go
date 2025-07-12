@@ -3,7 +3,7 @@ package src
 import "image/color"
 
 const (
-	BoardSize    = 15
+	BoardSize    = 8
 	TileSize     = 40
 	Margin       = TileSize
 	BoardWidth   = TileSize * (BoardSize - 1)

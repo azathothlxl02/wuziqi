@@ -1,6 +1,7 @@
 package src
 
 import (
+	// "fmt"
 	"math/rand"
 )
 
@@ -17,5 +18,7 @@ func GetRandomAIMove(board [BoardSize][BoardSize]Stone) (int, int) {
 		return -1, -1
 	}
 	move := empty[rand.Intn(len(empty))]
+	// fmt.Println("AI move:", move[0], move[1])
 	return move[0], move[1]
+	//竖 横
 }
