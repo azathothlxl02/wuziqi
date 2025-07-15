@@ -63,7 +63,7 @@ func (g *Game) Update() error {
 
 	case StatePlaying:
 		if g.pendingAI {
-			row, col := GetAIMove(g.board)
+			row, col := GetMCTMove(g.board)
 			g.placeStoneAt(row, col)
 			g.pendingAI = false
 			return nil
@@ -234,7 +234,7 @@ func (g *Game) drawModeSelect(screen *ebiten.Image) {
 	itemHeight := 32
 
 	menuItems := []string{
-		"Gomoku - 五子棋", // title
+		"Gomoku",
 		"[1] Human vs Human",
 		"[2] Human vs AI",
 		"[3] Exit",

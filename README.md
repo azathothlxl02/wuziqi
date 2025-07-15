@@ -21,3 +21,4 @@ go run main.go
 - version 0.3: 采用了go的GUI分支代码进行修改，文件整理，添加人机对战，开始菜单选择
 - version 0.4: 添加了悔棋功能
 - version 0.5: 基于alpha_zero的预训练模型增加了AI，目前棋盘尺寸更改为8x8
+- version 0.6: 增加中等难度，使用蒙特卡罗搜索树算法

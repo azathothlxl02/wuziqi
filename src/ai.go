@@ -8,6 +8,10 @@ import (
 	"os/exec"
 )
 
+func GetMCTMove(board [BoardSize][BoardSize]Stone) (int, int) {
+	return BestMove(board, White)
+}
+
 func GetAIMove(board [BoardSize][BoardSize]Stone) (row, col int) {
 	flat := make([]int, BoardSize*BoardSize)
 	for r := 0; r < BoardSize; r++ {
