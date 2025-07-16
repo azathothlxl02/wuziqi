@@ -29,3 +29,19 @@ https://golang.org/doc/install
 ```bash
 git clone https://github.com/yourusername/gomoku-ebiten
 cd gomoku-ebiten
+
+---
+
+## Releases
+
+### Release 1 (v1) - Basic PvP Gameplay
+**Release Date**: 2025.7.9  
+**Goal**: Build a minimal playable version of the Gomoku game with local two-player support.
+
+#### Features
+- Title screen before the game starts
+- Local two-player (PVP) mode: alternate turns between black and white players
+- Turn management logic
+- Win condition: judge and announce winner when a player gets 5 in a row
+- Display current turn
+- Game end screen with result
