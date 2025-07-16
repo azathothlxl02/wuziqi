@@ -20,6 +20,9 @@ type Game struct {
 	moves       int
 	state       GameState
 	playMode    PlayMode
+	difficulty  DifficultyLevel
+	moveHistory [][2]int
+	pendingAI   bool
 }
 
 func NewGame() *Game {
@@ -43,20 +46,76 @@ func (g *Game) Update() error {
 	case StateModeSelect:
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			_, y := ebiten.CursorPosition()
+
+			centerY := WindowHeight / 2
+			spacing := 60
+			itemHeight := 32
+			startY := centerY - spacing*2 + spacing*1
+
 			switch {
-			case y >= 200 && y < 250:
+			case y >= startY && y < startY+itemHeight:
 				g.Reset(HumanVsHuman)
-			case y >= 270 && y < 320:
-				g.Reset(HumanVsAI)
-			case y >= 340 && y < 390:
+			case y >= startY+spacing && y < startY+spacing+itemHeight:
+				// Instead of resetting immediately, go to difficulty selection
+				g.state = StateDifficultySelect
+			case y >= startY+2*spacing && y < startY+2*spacing+itemHeight:
 				os.Exit(0)
 			}
 		}
+
+	case StateDifficultySelect:
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			_, y := ebiten.CursorPosition()
+
+			centerY := WindowHeight / 2
+			spacing := 60
+			itemHeight := 32
+			startY := centerY - spacing*2 + spacing*1
+
+			// "Easy", "Medium", "Hard" buttons
+			if y >= startY && y < startY+itemHeight {
+				g.difficulty = Easy
+				g.Reset(HumanVsAI)
+			} else if y >= startY+spacing && y < startY+spacing+itemHeight {
+				g.difficulty = Medium
+				g.Reset(HumanVsAI)
+			} else if y >= startY+2*spacing && y < startY+2*spacing+itemHeight {
+				g.difficulty = Hard
+				g.Reset(HumanVsAI)
+			}
+		}
+
 	case StatePlaying:
-		if g.playMode == HumanVsAI && g.currentTurn == White {
-			row, col := GetRandomAIMove(g.board)
+		if g.pendingAI {
+			var row, col int // Declare variables to be used by either AI
+
+			if g.difficulty == Hard {
+				// On Hard, call your Python-based AlphaZero model
+				row, col = GetAIMove(g.board)
+			} else {
+				// On Easy/Medium, call the regular MCTS AI
+				row, col = GetMCTMove(g.board, g.currentTurn, g.difficulty)
+			}
+			// Place the stone returned by the chosen AI
 			g.placeStoneAt(row, col)
-		} else if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			g.pendingAI = false
+			return nil
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+			g.state = StateModeSelect
+			return nil
+		}
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			x, y := ebiten.CursorPosition()
+			if x >= WindowWidth-120 && y >= WindowHeight-50 {
+				g.undoMove()
+				return nil
+			}
+
+			if g.playMode == HumanVsAI && g.currentTurn == White {
+				return nil
+			}
+
 			g.handlePlayerMove()
 		}
 	case StateGameOver:
@@ -78,7 +137,9 @@ func (g *Game) handlePlayerMove() {
 
 func (g *Game) placeStoneAt(row, col int) {
 	g.board[row][col] = g.currentTurn
+	g.moveHistory = append(g.moveHistory, [2]int{row, col})
 	g.moves++
+
 	if g.checkWin(row, col) {
 		g.winner = g.currentTurn
 		g.state = StateGameOver
@@ -87,6 +148,10 @@ func (g *Game) placeStoneAt(row, col int) {
 		g.state = StateGameOver
 	} else {
 		g.currentTurn = 3 - g.currentTurn
+
+		if g.playMode == HumanVsAI && g.currentTurn == White {
+			g.pendingAI = true
+		}
 	}
 }
 
@@ -115,12 +180,41 @@ func (g *Game) checkWin(row, col int) bool {
 	return false
 }
 
+// Add this new function to draw the difficulty menu
+func (g *Game) drawDifficultySelect(screen *ebiten.Image) {
+	centerX := WindowWidth / 2
+	centerY := WindowHeight / 2
+	spacing := 60
+	itemHeight := 32
+
+	menuItems := []string{
+		"Select Difficulty",
+		"[1] Easy",
+		"[2] Medium",
+		"[3] Hard",
+	}
+
+	for i, item := range menuItems {
+		bounds := text.BoundString(utils.MplusFont, item)
+		x := centerX - bounds.Dx()/2
+		y := centerY - spacing*2 + i*spacing + itemHeight/2
+
+		// Make the title a different color to distinguish it
+		col := color.White
+		text.Draw(screen, item, utils.MplusFont, x, y, col)
+	}
+}
+
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(WoodColor)
 
 	switch g.state {
 	case StateModeSelect:
 		g.drawModeSelect(screen)
+	// --- ADD THIS CASE ---
+	case StateDifficultySelect:
+		g.drawDifficultySelect(screen)
+	// --- END ADD ---
 	case StatePlaying:
 		g.drawBoard(screen)
 		g.drawStatus(screen)
@@ -150,11 +244,29 @@ func (g *Game) drawBoard(screen *ebiten.Image) {
 		}
 	}
 }
+func (g *Game) undoMove() {
+	if g.state != StatePlaying || len(g.moveHistory) == 0 {
+		return
+	}
+	steps := 1
+	if g.playMode == HumanVsAI && len(g.moveHistory) >= 2 {
+		steps = 2
+	}
+
+	for i := 0; i < steps; i++ {
+		last := g.moveHistory[len(g.moveHistory)-1]
+		g.board[last[0]][last[1]] = Empty
+		g.moveHistory = g.moveHistory[:len(g.moveHistory)-1]
+		g.moves--
+		g.currentTurn = 3 - g.currentTurn
+	}
+}
 
 func (g *Game) drawStatus(screen *ebiten.Image) {
 	turnText := "Current Turn: "
 	cx := float64(text.BoundString(utils.MplusFont, turnText).Dx() + 40)
 	cy := float64(WindowWidth + StatusHeight/2)
+	text.Draw(screen, "Press ESC to return menu", utils.MplusFont, 20, WindowHeight-65, color.Black)
 
 	text.Draw(screen, turnText, utils.MplusFont, 20, int(cy+10), color.Black)
 
@@ -163,6 +275,10 @@ func (g *Game) drawStatus(screen *ebiten.Image) {
 		col = color.White
 	}
 	ebitenutil.DrawCircle(screen, cx, cy, StoneRadius, col)
+
+	btnX, btnY := WindowWidth-120, WindowHeight-50
+	ebitenutil.DrawRect(screen, float64(btnX), float64(btnY), 100, 30, color.RGBA{180, 180, 180, 255})
+	text.Draw(screen, "Undo", utils.MplusFont, btnX+20, btnY+22, color.Black)
 }
 
 func (g *Game) drawGameOver(screen *ebiten.Image) {
@@ -178,10 +294,24 @@ func (g *Game) drawGameOver(screen *ebiten.Image) {
 }
 
 func (g *Game) drawModeSelect(screen *ebiten.Image) {
-	text.Draw(screen, "Gomoku - 五子棋", utils.MplusFont, 150, 120, color.White)
-	text.Draw(screen, "[1] Human vs Human", utils.MplusFont, 140, 230, color.White)
-	text.Draw(screen, "[2] Human vs AI", utils.MplusFont, 140, 300, color.White)
-	text.Draw(screen, "[3] Exit", utils.MplusFont, 140, 370, color.White)
+	centerX := WindowWidth / 2
+	centerY := WindowHeight / 2
+	spacing := 60
+	itemHeight := 32
+
+	menuItems := []string{
+		"Gomoku",
+		"[1] Human vs Human",
+		"[2] Human vs AI",
+		"[3] Exit",
+	}
+
+	for i, item := range menuItems {
+		bounds := text.BoundString(utils.MplusFont, item)
+		x := centerX - bounds.Dx()/2
+		y := centerY - spacing*2 + i*spacing + itemHeight/2
+		text.Draw(screen, item, utils.MplusFont, x, y, color.White)
+	}
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {

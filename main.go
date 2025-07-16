@@ -10,7 +10,7 @@ import (
 
 func main() {
 	ebiten.SetWindowSize(src.WindowWidth, src.WindowHeight)
-	ebiten.SetWindowTitle("Gomoku - 五子棋")
+	ebiten.SetWindowTitle("Gomoku")
 
 	game := src.NewGame()
 	if err := ebiten.RunGame(game); err != nil {
