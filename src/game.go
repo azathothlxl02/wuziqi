@@ -49,18 +49,20 @@ func (g *Game) Reset(mode PlayMode) {
 	g.playMode = mode
 	g.state = StatePlaying
 	g.moveHistory = nil
+	g.pendingAI = false
 
 	if mode == HumanVsLAN && g.conn != nil {
 		g.lanReceivedMoves = make(chan [2]int, 10)
+
 		go func() {
 			for {
 				if g.conn == nil {
-					break
+					return
 				}
 				row, col, err := recvMove(g.conn)
 				if err != nil {
 					g.lanState = "failed"
-					break
+					return
 				}
 				g.lanReceivedMoves <- [2]int{row, col}
 			}
