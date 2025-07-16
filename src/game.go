@@ -48,6 +48,24 @@ func (g *Game) Reset(mode PlayMode) {
 	g.moves = 0
 	g.playMode = mode
 	g.state = StatePlaying
+	g.moveHistory = nil
+
+	if mode == HumanVsLAN && g.conn != nil {
+		g.lanReceivedMoves = make(chan [2]int, 10)
+		go func() {
+			for {
+				if g.conn == nil {
+					break
+				}
+				row, col, err := recvMove(g.conn)
+				if err != nil {
+					g.lanState = "failed"
+					break
+				}
+				g.lanReceivedMoves <- [2]int{row, col}
+			}
+		}()
+	}
 }
 
 func (g *Game) Update() error {
@@ -82,7 +100,6 @@ func (g *Game) Update() error {
 			itemHeight := 32
 			startY := centerY - spacing*2 + spacing*1
 
-			// "Easy", "Medium", "Hard" buttons
 			if y >= startY && y < startY+itemHeight {
 				g.difficulty = Easy
 				g.Reset(HumanVsAI)
@@ -96,9 +113,12 @@ func (g *Game) Update() error {
 		}
 
 	case StatePlaying:
+		if g.playMode == HumanVsAI && g.currentTurn == White && !g.pendingAI && g.winner == Empty {
+			g.pendingAI = true
+		}
+
 		if g.pendingAI {
 			var row, col int
-
 			if g.difficulty == Hard {
 				row, col = GetAIMove(g.board)
 			} else {
@@ -108,23 +128,12 @@ func (g *Game) Update() error {
 			g.pendingAI = false
 			return nil
 		}
+
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 			g.state = StateModeSelect
 			return nil
 		}
-		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-			x, y := ebiten.CursorPosition()
-			if x >= WindowWidth-120 && y >= WindowHeight-50 {
-				g.undoMove()
-				return nil
-			}
 
-			if g.playMode == HumanVsAI && g.currentTurn == White {
-				return nil
-			}
-
-			g.handlePlayerMove()
-		}
 		if g.playMode == HumanVsLAN {
 			isMyTurn := (g.role == "host" && g.currentTurn == Black) ||
 				(g.role == "client" && g.currentTurn == White)
@@ -141,6 +150,34 @@ func (g *Game) Update() error {
 				}
 			}
 			return nil
+		}
+
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			x, y := ebiten.CursorPosition()
+			if x >= WindowWidth-120 && y >= WindowHeight-50 {
+				g.undoMove()
+				return nil
+			}
+
+			if g.playMode == HumanVsAI && g.currentTurn == White {
+				return nil
+			}
+
+			g.handlePlayerMove()
+		}
+
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			x, y := ebiten.CursorPosition()
+			if x >= WindowWidth-120 && y >= WindowHeight-50 {
+				g.undoMove()
+				return nil
+			}
+
+			if g.playMode == HumanVsAI && g.currentTurn == White {
+				return nil
+			}
+
+			g.handlePlayerMove()
 		}
 
 	case StateLANConnect:
@@ -227,6 +264,18 @@ func (g *Game) handlePlayerMove() {
 }
 
 func (g *Game) placeStoneAt(row, col int) {
+	if g.board[row][col] != Empty {
+		return
+	}
+
+	if g.playMode == HumanVsLAN {
+		isMyTurn := (g.role == "host" && g.currentTurn == Black) ||
+			(g.role == "client" && g.currentTurn == White)
+		if !isMyTurn {
+			return
+		}
+	}
+
 	g.board[row][col] = g.currentTurn
 	g.moveHistory = append(g.moveHistory, [2]int{row, col})
 	g.moves++
@@ -243,10 +292,6 @@ func (g *Game) placeStoneAt(row, col int) {
 		g.state = StateGameOver
 	} else {
 		g.currentTurn = 3 - g.currentTurn
-
-		if g.playMode == HumanVsAI && g.currentTurn == White {
-			g.pendingAI = true
-		}
 	}
 }
 
