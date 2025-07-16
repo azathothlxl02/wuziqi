@@ -45,3 +45,15 @@ cd gomoku-ebiten
 - Win condition: judge and announce winner when a player gets 5 in a row
 - Display current turn
 - Game end screen with result
+
+---
+
+### Release 2 (v2) – Computer Opponent & Game Control Features
+**Release Date**: 2025.7.12
+**Goal**: Implement player vs computer mode and enhance gameplay control.
+
+#### Features
+- Player vs CPU (EVE) mode: simple AI takes turns with the player
+- Regret/Undo function: undo the previous move
+- In-game Restart and Exit buttons
+- Improved turn control and stone validation logic
