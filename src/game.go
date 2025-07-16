@@ -3,6 +3,7 @@ package src
 import (
 	"image/color"
 	"math"
+	"net"
 	"os"
 
 	"GUI/utils"
@@ -23,6 +24,10 @@ type Game struct {
 	difficulty  DifficultyLevel
 	moveHistory [][2]int
 	pendingAI   bool
+	conn        net.Conn
+	role        string
+	lanState    string
+	lanIPs      []string
 }
 
 func NewGame() *Game {
@@ -56,9 +61,10 @@ func (g *Game) Update() error {
 			case y >= startY && y < startY+itemHeight:
 				g.Reset(HumanVsHuman)
 			case y >= startY+spacing && y < startY+spacing+itemHeight:
-				// Instead of resetting immediately, go to difficulty selection
 				g.state = StateDifficultySelect
 			case y >= startY+2*spacing && y < startY+2*spacing+itemHeight:
+				g.state = StateLANConnect
+			case y >= startY+3*spacing && y < startY+3*spacing+itemHeight:
 				os.Exit(0)
 			}
 		}
@@ -118,6 +124,60 @@ func (g *Game) Update() error {
 
 			g.handlePlayerMove()
 		}
+		if g.playMode == HumanVsLAN {
+			if (g.role == "host" && g.currentTurn == Black) ||
+				(g.role == "client" && g.currentTurn == White) {
+				g.handlePlayerMove()
+			} else {
+				go func() {
+					if g.conn == nil {
+						return
+					}
+					row, col, err := recvMove(g.conn)
+					if err != nil {
+						return
+					}
+					g.placeStoneAt(row, col)
+				}()
+			}
+			return nil
+		}
+
+	case StateLANConnect:
+		if len(g.lanIPs) == 0 {
+			g.lanIPs = GetLocalIPs()
+			g.lanState = "waiting"
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyH) {
+			g.lanState = "waiting"
+			go func() {
+				conn, err := hostGame()
+				if err != nil {
+					g.lanState = "failed"
+					return
+				}
+				g.conn = conn
+				g.role = "host"
+				g.Reset(HumanVsLAN)
+			}()
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyJ) {
+			g.lanState = "waiting"
+			go func() {
+				conn, err := joinGame("127.0.0.1")
+				if err != nil {
+					g.lanState = "failed"
+					return
+				}
+				g.conn = conn
+				g.role = "client"
+				g.Reset(HumanVsLAN)
+			}()
+		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+			g.state = StateModeSelect
+		}
+
 	case StateGameOver:
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			g.state = StateModeSelect
@@ -140,6 +200,9 @@ func (g *Game) placeStoneAt(row, col int) {
 	g.moveHistory = append(g.moveHistory, [2]int{row, col})
 	g.moves++
 
+	if g.playMode == HumanVsLAN && g.conn != nil {
+		sendMove(g.conn, row, col)
+	}
 	if g.checkWin(row, col) {
 		g.winner = g.currentTurn
 		g.state = StateGameOver
@@ -180,7 +243,6 @@ func (g *Game) checkWin(row, col int) bool {
 	return false
 }
 
-// Add this new function to draw the difficulty menu
 func (g *Game) drawDifficultySelect(screen *ebiten.Image) {
 	centerX := WindowWidth / 2
 	centerY := WindowHeight / 2
@@ -211,10 +273,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	switch g.state {
 	case StateModeSelect:
 		g.drawModeSelect(screen)
-	// --- ADD THIS CASE ---
 	case StateDifficultySelect:
 		g.drawDifficultySelect(screen)
-	// --- END ADD ---
+	case StateLANConnect:
+		g.drawLANConnect(screen)
 	case StatePlaying:
 		g.drawBoard(screen)
 		g.drawStatus(screen)
@@ -303,7 +365,8 @@ func (g *Game) drawModeSelect(screen *ebiten.Image) {
 		"Gomoku",
 		"[1] Human vs Human",
 		"[2] Human vs AI",
-		"[3] Exit",
+		"[3] LAN Battle",
+		"[4] Exit",
 	}
 
 	for i, item := range menuItems {
@@ -312,6 +375,25 @@ func (g *Game) drawModeSelect(screen *ebiten.Image) {
 		y := centerY - spacing*2 + i*spacing + itemHeight/2
 		text.Draw(screen, item, utils.MplusFont, x, y, color.White)
 	}
+}
+
+func (g *Game) drawLANConnect(screen *ebiten.Image) {
+	title := "LAN Battle"
+	tw := text.BoundString(utils.MplusFont, title).Dx()
+	text.Draw(screen, title, utils.MplusFont, (WindowWidth-tw)/2, 100, color.White)
+
+	y := 160
+	text.Draw(screen, "Your LAN IPs:", utils.MplusFont, 80, y, color.White)
+	y += 30
+	for _, ip := range g.lanIPs {
+		text.Draw(screen, "  - "+ip, utils.MplusFont, 100, y, color.White)
+		y += 25
+	}
+
+	y += 40
+	text.Draw(screen, "Press [H] to HOST", utils.MplusFont, 80, y, color.White)
+	text.Draw(screen, "Press [J] to JOIN", utils.MplusFont, 80, y+35, color.White)
+	text.Draw(screen, "ESC: Back to menu", utils.MplusFont, 80, y+70, color.Gray{150})
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {

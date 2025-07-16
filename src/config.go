@@ -34,6 +34,7 @@ const (
 	StatePlaying
 	StateGameOver
 	StateDifficultySelect
+	StateLANConnect
 )
 
 type PlayMode int
@@ -41,6 +42,7 @@ type PlayMode int
 const (
 	HumanVsHuman PlayMode = iota
 	HumanVsAI
+	HumanVsLAN
 )
 
 type DifficultyLevel int
