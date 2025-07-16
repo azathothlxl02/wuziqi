@@ -71,7 +71,7 @@ cd gomoku-ebiten
 - Exportable game binary (planned)
 - In-game help or README documentation (planned)
 
-## 🛠 Build Instructions
+## Build Instructions
 
 To generate a standalone executable:
 
