@@ -70,3 +70,12 @@ cd gomoku-ebiten
 - Optional background music (planned)
 - Exportable game binary (planned)
 - In-game help or README documentation (planned)
+
+## 🛠 Build Instructions
+
+To generate a standalone executable:
+
+```bash
+go build -o gomoku
+
+```
