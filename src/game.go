@@ -16,26 +16,28 @@ import (
 )
 
 type Game struct {
-	board       [BoardSize][BoardSize]Stone
-	currentTurn Stone
-	winner      Stone
-	moves       int
-	state       GameState
-	playMode    PlayMode
-	difficulty  DifficultyLevel
-	moveHistory [][2]int
-	pendingAI   bool
-	conn        net.Conn
-	role        string
-	lanState    string
-	foundRooms  []RoomInfo
-	selectedIdx int
+	board            [BoardSize][BoardSize]Stone
+	currentTurn      Stone
+	winner           Stone
+	moves            int
+	state            GameState
+	playMode         PlayMode
+	difficulty       DifficultyLevel
+	moveHistory      [][2]int
+	pendingAI        bool
+	conn             net.Conn
+	role             string
+	lanState         string
+	foundRooms       []RoomInfo
+	selectedIdx      int
+	lanReceivedMoves chan [2]int
 }
 
 func NewGame() *Game {
 	utils.InitFont()
 	return &Game{
-		state: StateModeSelect,
+		state:            StateModeSelect,
+		lanReceivedMoves: make(chan [2]int, 10),
 	}
 }
 
@@ -124,17 +126,21 @@ func (g *Game) Update() error {
 			g.handlePlayerMove()
 		}
 		if g.playMode == HumanVsLAN {
-			if (g.role == "host" && g.currentTurn == Black) ||
-				(g.role == "client" && g.currentTurn == White) {
-				g.handlePlayerMove()
+			isMyTurn := (g.role == "host" && g.currentTurn == Black) ||
+				(g.role == "client" && g.currentTurn == White)
+
+			if isMyTurn {
+				if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+					g.handlePlayerMove()
+				}
 			} else {
-				go func() {
-					row, col, err := recvMove(g.conn)
-					if err == nil {
-						g.placeStoneAt(row, col)
-					}
-				}()
+				select {
+				case move := <-g.lanReceivedMoves:
+					g.placeStoneAt(move[0], move[1])
+				default:
+				}
 			}
+			return nil
 		}
 
 	case StateLANConnect:
@@ -146,9 +152,24 @@ func (g *Game) Update() error {
 					g.lanState = "failed"
 					return
 				}
+
 				g.conn = conn
 				g.role = "host"
 				g.Reset(HumanVsLAN)
+
+				go func() {
+					for {
+						if g.conn == nil {
+							break
+						}
+						row, col, err := recvMove(g.conn)
+						if err != nil {
+							g.lanState = "failed"
+							break
+						}
+						g.lanReceivedMoves <- [2]int{row, col}
+					}
+				}()
 			}()
 		}
 

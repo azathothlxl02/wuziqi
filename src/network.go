@@ -30,6 +30,7 @@ func HostGame() (net.Conn, error) {
 	go broadcastRoom(port)
 	conn, err := ln.Accept()
 	return conn, err
+
 }
 
 func broadcastRoom(port int) {
