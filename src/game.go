@@ -1,12 +1,13 @@
 package src
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 	"net"
 	"os"
-
-	"GUI/utils"
+	"time"
+	"wuziqi/utils"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -27,7 +28,8 @@ type Game struct {
 	conn        net.Conn
 	role        string
 	lanState    string
-	lanIPs      []string
+	foundRooms  []RoomInfo
+	selectedIdx int
 }
 
 func NewGame() *Game {
@@ -93,16 +95,13 @@ func (g *Game) Update() error {
 
 	case StatePlaying:
 		if g.pendingAI {
-			var row, col int // Declare variables to be used by either AI
+			var row, col int
 
 			if g.difficulty == Hard {
-				// On Hard, call your Python-based AlphaZero model
 				row, col = GetAIMove(g.board)
 			} else {
-				// On Easy/Medium, call the regular MCTS AI
 				row, col = GetMCTMove(g.board, g.currentTurn, g.difficulty)
 			}
-			// Place the stone returned by the chosen AI
 			g.placeStoneAt(row, col)
 			g.pendingAI = false
 			return nil
@@ -130,28 +129,19 @@ func (g *Game) Update() error {
 				g.handlePlayerMove()
 			} else {
 				go func() {
-					if g.conn == nil {
-						return
-					}
 					row, col, err := recvMove(g.conn)
-					if err != nil {
-						return
+					if err == nil {
+						g.placeStoneAt(row, col)
 					}
-					g.placeStoneAt(row, col)
 				}()
 			}
-			return nil
 		}
 
 	case StateLANConnect:
-		if len(g.lanIPs) == 0 {
-			g.lanIPs = GetLocalIPs()
-			g.lanState = "waiting"
-		}
-		if inpututil.IsKeyJustPressed(ebiten.KeyH) {
-			g.lanState = "waiting"
+		if inpututil.IsKeyJustPressed(ebiten.KeyH) && g.conn == nil {
+			g.lanState = "hosting"
 			go func() {
-				conn, err := hostGame()
+				conn, err := HostGame()
 				if err != nil {
 					g.lanState = "failed"
 					return
@@ -161,21 +151,41 @@ func (g *Game) Update() error {
 				g.Reset(HumanVsLAN)
 			}()
 		}
-		if inpututil.IsKeyJustPressed(ebiten.KeyJ) {
-			g.lanState = "waiting"
+
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) {
+			g.lanState = "searching"
 			go func() {
-				conn, err := joinGame("127.0.0.1")
+				rooms, err := DiscoverRooms(2 * time.Second)
 				if err != nil {
 					g.lanState = "failed"
 					return
 				}
+				g.foundRooms = rooms
+				g.selectedIdx = 0
+				g.lanState = "ready"
+			}()
+		}
+
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) && g.lanState == "ready" {
+			if g.selectedIdx >= 0 && g.selectedIdx < len(g.foundRooms) {
+				room := g.foundRooms[g.selectedIdx]
+				conn, err := JoinRoom(room)
+				if err != nil {
+					g.lanState = "failed"
+					return nil
+				}
 				g.conn = conn
 				g.role = "client"
 				g.Reset(HumanVsLAN)
-			}()
+			}
 		}
+
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 			g.state = StateModeSelect
+			g.conn = nil
+			g.role = ""
+			g.lanState = ""
+			g.foundRooms = nil
 		}
 
 	case StateGameOver:
@@ -203,6 +213,7 @@ func (g *Game) placeStoneAt(row, col int) {
 	if g.playMode == HumanVsLAN && g.conn != nil {
 		sendMove(g.conn, row, col)
 	}
+
 	if g.checkWin(row, col) {
 		g.winner = g.currentTurn
 		g.state = StateGameOver
@@ -383,17 +394,49 @@ func (g *Game) drawLANConnect(screen *ebiten.Image) {
 	text.Draw(screen, title, utils.MplusFont, (WindowWidth-tw)/2, 100, color.White)
 
 	y := 160
-	text.Draw(screen, "Your LAN IPs:", utils.MplusFont, 80, y, color.White)
-	y += 30
-	for _, ip := range g.lanIPs {
-		text.Draw(screen, "  - "+ip, utils.MplusFont, 100, y, color.White)
-		y += 25
+	leftMargin := 40
+
+	scale := 0.7
+
+	drawScaledText := func(s string, x, y int, clr color.Color) {
+		bounds := text.BoundString(utils.MplusFont, s)
+		img := ebiten.NewImage(bounds.Dx(), bounds.Dy())
+		img.Fill(color.Transparent)
+		text.Draw(img, s, utils.MplusFont, 0, bounds.Dy(), clr)
+
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Translate(float64(x), float64(y)-float64(bounds.Dy())*scale)
+		screen.DrawImage(img, op)
 	}
 
-	y += 40
-	text.Draw(screen, "Press [H] to HOST", utils.MplusFont, 80, y, color.White)
-	text.Draw(screen, "Press [J] to JOIN", utils.MplusFont, 80, y+35, color.White)
-	text.Draw(screen, "ESC: Back to menu", utils.MplusFont, 80, y+70, color.Gray{150})
+	switch g.lanState {
+	case "hosting":
+		drawScaledText("Hosting... Waiting for player to join.", leftMargin, y, color.White)
+	case "searching":
+		drawScaledText("Searching for available rooms...", leftMargin, y, color.White)
+	case "ready":
+		drawScaledText("Available Rooms (Right-click to refresh):", leftMargin, y, color.White)
+		y += int(30 * scale)
+		for i, room := range g.foundRooms {
+			ipStr := fmt.Sprintf("Room %d - %s:%d", i+1, room.IP, room.Port)
+			var col color.Color = color.White
+			if i == g.selectedIdx {
+				col = color.RGBA{200, 255, 200, 255}
+			}
+			drawScaledText(ipStr, leftMargin+20, y, col)
+			y += int(25 * scale)
+		}
+
+	case "failed":
+		drawScaledText("Connection failed. Check network or host.", leftMargin, y, color.RGBA{255, 100, 100, 255})
+	default:
+		drawScaledText("Press [H] to HOST a game", leftMargin, y, color.White)
+		y += int(30 * scale)
+		drawScaledText("Right-click to SEARCH rooms", leftMargin, y, color.White)
+	}
+
+	drawScaledText("ESC: Back to menu", leftMargin, WindowHeight-40, color.Gray{150})
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {

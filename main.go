@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"GUI/src"
+	"wuziqi/src"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
