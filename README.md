@@ -30,7 +30,7 @@ https://golang.org/doc/install
 git clone https://github.com/yourusername/gomoku-ebiten
 cd gomoku-ebiten
 
----
+```
 
 ## Releases
 
