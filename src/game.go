@@ -42,6 +42,7 @@ func NewGame() *Game {
 }
 
 func (g *Game) Reset(mode PlayMode) {
+	fmt.Printf("[RESET] mode=%v role=%v conn=%v\n", mode, g.role, g.conn != nil)
 	g.board = [BoardSize][BoardSize]Stone{}
 	g.currentTurn = Black
 	g.winner = Empty
@@ -53,7 +54,7 @@ func (g *Game) Reset(mode PlayMode) {
 
 	if mode == HumanVsLAN && g.conn != nil {
 		g.lanReceivedMoves = make(chan [2]int, 10)
-		fmt.Printf("[RESET] Mode=%v Role=%v Conn=%v\n", mode, g.role, g.conn != nil)
+
 		go func() {
 			for {
 				if g.conn == nil {
@@ -61,9 +62,14 @@ func (g *Game) Reset(mode PlayMode) {
 				}
 				row, col, err := recvMove(g.conn)
 				if err != nil {
+					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+						continue
+					}
+					fmt.Println("recvMove error:", err)
 					g.lanState = "failed"
 					return
 				}
+				fmt.Printf("[RECV] Client received: (%d, %d)\n", row, col)
 				g.lanReceivedMoves <- [2]int{row, col}
 			}
 		}()
@@ -73,6 +79,18 @@ func (g *Game) Reset(mode PlayMode) {
 func (g *Game) Update() error {
 	switch g.state {
 	case StateModeSelect:
+		if g.conn != nil {
+			_ = g.conn.Close()
+		}
+		g.conn = nil
+		g.role = ""
+		g.lanState = ""
+		g.foundRooms = nil
+		g.board = [BoardSize][BoardSize]Stone{}
+		g.currentTurn = Black
+		g.winner = Empty
+		g.moves = 0
+		g.moveHistory = nil
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			_, y := ebiten.CursorPosition()
 
@@ -145,10 +163,24 @@ func (g *Game) Update() error {
 					g.handlePlayerMove()
 				}
 			} else {
-				move := <-g.lanReceivedMoves
-				g.placeStoneAt(move[0], move[1])
+				select {
+				case move := <-g.lanReceivedMoves:
+					g.board[move[0]][move[1]] = g.currentTurn
+					g.moveHistory = append(g.moveHistory, move)
+					g.moves++
+					if g.checkWin(move[0], move[1]) {
+						g.winner = g.currentTurn
+						g.state = StateGameOver
+					} else if g.moves == BoardSize*BoardSize {
+						g.winner = Empty
+						g.state = StateGameOver
+					} else {
+						g.currentTurn = 3 - g.currentTurn
+					}
+					fmt.Printf("[RECV] %s received: (%d,%d)\n", g.role, move[0], move[1])
+				default:
+				}
 			}
-			return nil
 		}
 
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -267,12 +299,11 @@ func (g *Game) placeStoneAt(row, col int) {
 		return
 	}
 
-	if g.playMode == HumanVsLAN {
-		isMyTurn := (g.role == "host" && g.currentTurn == Black) ||
-			(g.role == "client" && g.currentTurn == White)
-		if !isMyTurn {
-			return
-		}
+	isMyTurn := (g.role == "host" && g.currentTurn == Black) ||
+		(g.role == "client" && g.currentTurn == White)
+
+	if g.playMode == HumanVsLAN && !isMyTurn {
+		return
 	}
 
 	g.board[row][col] = g.currentTurn
@@ -281,6 +312,7 @@ func (g *Game) placeStoneAt(row, col int) {
 
 	if g.playMode == HumanVsLAN && g.conn != nil {
 		sendMove(g.conn, row, col)
+		fmt.Printf("[SEND] %s sent: (%d,%d)\n", g.role, row, col)
 	}
 
 	if g.checkWin(row, col) {
@@ -337,7 +369,6 @@ func (g *Game) drawDifficultySelect(screen *ebiten.Image) {
 		x := centerX - bounds.Dx()/2
 		y := centerY - spacing*2 + i*spacing + itemHeight/2
 
-		// Make the title a different color to distinguish it
 		col := color.White
 		text.Draw(screen, item, utils.MplusFont, x, y, col)
 	}

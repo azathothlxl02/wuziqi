@@ -93,12 +93,18 @@ func localIP() string {
 }
 
 func sendMove(conn net.Conn, row, col int) error {
-	fmt.Printf("[SEND] Row=%d Col=%d\n", row, col)
 	return json.NewEncoder(conn).Encode(NetMsg{Row: row, Col: col})
 }
 
 func recvMove(conn net.Conn) (int, int, error) {
+	conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+
 	var msg NetMsg
 	err := json.NewDecoder(conn).Decode(&msg)
-	return msg.Row, msg.Col, err
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// fmt.Printf("[RECV] received move: (%d, %d)\n", msg.Row, msg.Col)
+	return msg.Row, msg.Col, nil
 }
