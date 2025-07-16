@@ -93,6 +93,7 @@ func localIP() string {
 }
 
 func sendMove(conn net.Conn, row, col int) error {
+	fmt.Printf("[SEND] Row=%d Col=%d\n", row, col)
 	return json.NewEncoder(conn).Encode(NetMsg{Row: row, Col: col})
 }
 

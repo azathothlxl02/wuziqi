@@ -53,7 +53,7 @@ func (g *Game) Reset(mode PlayMode) {
 
 	if mode == HumanVsLAN && g.conn != nil {
 		g.lanReceivedMoves = make(chan [2]int, 10)
-
+		fmt.Printf("[RESET] Mode=%v Role=%v Conn=%v\n", mode, g.role, g.conn != nil)
 		go func() {
 			for {
 				if g.conn == nil {
@@ -145,11 +145,8 @@ func (g *Game) Update() error {
 					g.handlePlayerMove()
 				}
 			} else {
-				select {
-				case move := <-g.lanReceivedMoves:
-					g.placeStoneAt(move[0], move[1])
-				default:
-				}
+				move := <-g.lanReceivedMoves
+				g.placeStoneAt(move[0], move[1])
 			}
 			return nil
 		}
