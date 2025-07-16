@@ -68,6 +68,10 @@ func (g *Game) Update() error {
 			g.pendingAI = false
 			return nil
 		}
+		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+			g.state = StateModeSelect
+			return nil
+		}
 
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			x, y := ebiten.CursorPosition()
@@ -201,6 +205,7 @@ func (g *Game) drawStatus(screen *ebiten.Image) {
 	turnText := "Current Turn: "
 	cx := float64(text.BoundString(utils.MplusFont, turnText).Dx() + 40)
 	cy := float64(WindowWidth + StatusHeight/2)
+	text.Draw(screen, "Press ESC to return menu", utils.MplusFont, 20, WindowHeight-65, color.Black)
 
 	text.Draw(screen, turnText, utils.MplusFont, 20, int(cy+10), color.Black)
 
