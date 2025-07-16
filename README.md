@@ -49,7 +49,7 @@ cd gomoku-ebiten
 ---
 
 ### Release 2 (v2) – Computer Opponent & Game Control Features
-**Release Date**: 2025.7.12
+**Release Date**: 2025.7.12  
 **Goal**: Implement player vs computer mode and enhance gameplay control.
 
 #### Features
