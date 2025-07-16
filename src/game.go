@@ -20,6 +20,7 @@ type Game struct {
 	moves       int
 	state       GameState
 	playMode    PlayMode
+	difficulty  DifficultyLevel
 	moveHistory [][2]int
 	pendingAI   bool
 }
@@ -55,15 +56,47 @@ func (g *Game) Update() error {
 			case y >= startY && y < startY+itemHeight:
 				g.Reset(HumanVsHuman)
 			case y >= startY+spacing && y < startY+spacing+itemHeight:
-				g.Reset(HumanVsAI)
+				// Instead of resetting immediately, go to difficulty selection
+				g.state = StateDifficultySelect
 			case y >= startY+2*spacing && y < startY+2*spacing+itemHeight:
 				os.Exit(0)
 			}
 		}
 
+	case StateDifficultySelect:
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			_, y := ebiten.CursorPosition()
+
+			centerY := WindowHeight / 2
+			spacing := 60
+			itemHeight := 32
+			startY := centerY - spacing*2 + spacing*1
+
+			// "Easy", "Medium", "Hard" buttons
+			if y >= startY && y < startY+itemHeight {
+				g.difficulty = Easy
+				g.Reset(HumanVsAI)
+			} else if y >= startY+spacing && y < startY+spacing+itemHeight {
+				g.difficulty = Medium
+				g.Reset(HumanVsAI)
+			} else if y >= startY+2*spacing && y < startY+2*spacing+itemHeight {
+				g.difficulty = Hard
+				g.Reset(HumanVsAI)
+			}
+		}
+
 	case StatePlaying:
 		if g.pendingAI {
-			row, col := GetMCTMove(g.board)
+			var row, col int // Declare variables to be used by either AI
+
+			if g.difficulty == Hard {
+				// On Hard, call your Python-based AlphaZero model
+				row, col = GetAIMove(g.board)
+			} else {
+				// On Easy/Medium, call the regular MCTS AI
+				row, col = GetMCTMove(g.board, g.currentTurn, g.difficulty)
+			}
+			// Place the stone returned by the chosen AI
 			g.placeStoneAt(row, col)
 			g.pendingAI = false
 			return nil
@@ -72,7 +105,6 @@ func (g *Game) Update() error {
 			g.state = StateModeSelect
 			return nil
 		}
-
 		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 			x, y := ebiten.CursorPosition()
 			if x >= WindowWidth-120 && y >= WindowHeight-50 {
@@ -148,12 +180,41 @@ func (g *Game) checkWin(row, col int) bool {
 	return false
 }
 
+// Add this new function to draw the difficulty menu
+func (g *Game) drawDifficultySelect(screen *ebiten.Image) {
+	centerX := WindowWidth / 2
+	centerY := WindowHeight / 2
+	spacing := 60
+	itemHeight := 32
+
+	menuItems := []string{
+		"Select Difficulty",
+		"[1] Easy",
+		"[2] Medium",
+		"[3] Hard",
+	}
+
+	for i, item := range menuItems {
+		bounds := text.BoundString(utils.MplusFont, item)
+		x := centerX - bounds.Dx()/2
+		y := centerY - spacing*2 + i*spacing + itemHeight/2
+
+		// Make the title a different color to distinguish it
+		col := color.White
+		text.Draw(screen, item, utils.MplusFont, x, y, col)
+	}
+}
+
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(WoodColor)
 
 	switch g.state {
 	case StateModeSelect:
 		g.drawModeSelect(screen)
+	// --- ADD THIS CASE ---
+	case StateDifficultySelect:
+		g.drawDifficultySelect(screen)
+	// --- END ADD ---
 	case StatePlaying:
 		g.drawBoard(screen)
 		g.drawStatus(screen)

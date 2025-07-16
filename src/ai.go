@@ -8,8 +8,9 @@ import (
 	"os/exec"
 )
 
-func GetMCTMove(board [BoardSize][BoardSize]Stone) (int, int) {
-	return BestMove(board, White)
+func GetMCTMove(board [BoardSize][BoardSize]Stone, player Stone, difficulty DifficultyLevel) (int, int) {
+	bCopy := Board(board)
+	return BestMove(bCopy, player, difficulty)
 }
 
 func GetAIMove(board [BoardSize][BoardSize]Stone) (row, col int) {

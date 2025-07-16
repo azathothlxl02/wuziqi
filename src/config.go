@@ -33,6 +33,7 @@ const (
 	StateModeSelect
 	StatePlaying
 	StateGameOver
+	StateDifficultySelect
 )
 
 type PlayMode int
@@ -40,4 +41,12 @@ type PlayMode int
 const (
 	HumanVsHuman PlayMode = iota
 	HumanVsAI
+)
+
+type DifficultyLevel int
+
+const (
+	Easy DifficultyLevel = iota
+	Medium
+	Hard
 )

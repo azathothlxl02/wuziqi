@@ -9,13 +9,25 @@ import (
 
 type Board [BoardSize][BoardSize]Stone
 
-func BestMove(board Board, forPlayer Stone) (int, int) {
+func BestMove(board Board, forPlayer Stone, difficulty DifficultyLevel) (int, int) {
 	if win, _ := checkWin(board); win != 0 {
 		return -1, -1
 	}
 	root := newNode(board, forPlayer)
 
-	deadline := time.Now().Add(3 * time.Second)
+	// --- CHANGE THE DEADLINE LOGIC ---
+	var thinkingTime time.Duration
+	switch difficulty {
+	case Easy:
+		thinkingTime = 1 * time.Second
+	case Medium:
+		thinkingTime = 3 * time.Second
+	default:
+		thinkingTime = 1 * time.Second // Default fallback
+	}
+	deadline := time.Now().Add(thinkingTime)
+	// --- END CHANGE ---
+
 	for time.Now().Before(deadline) {
 		leaf := selectNode(root)
 		winner := simulate(leaf)
@@ -23,14 +35,16 @@ func BestMove(board Board, forPlayer Stone) (int, int) {
 	}
 
 	var best *node
-	max := -1.0
+	// In MCTS, the most visited node is the most robust choice.
+	maxVisits := -1.0
 	for _, c := range root.children {
-		if c.visits > max {
-			max = c.visits
+		if c.visits > maxVisits {
+			maxVisits = c.visits
 			best = c
 		}
 	}
 	if best == nil {
+		// This can happen if no simulations are run or the game is over.
 		return randomMove(board)
 	}
 	return best.move[0], best.move[1]
