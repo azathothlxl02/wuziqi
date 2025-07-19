@@ -551,10 +551,11 @@ func (g *Game) undoMove() {
 	if g.state != StatePlaying || len(g.moveHistory) == 0 {
 		return
 	}
-	if g.playMode == HumanVsLAN {
+
+	switch g.playMode {
+	case HumanVsLAN:
 		isMyTurn := (g.role == "host" && g.currentTurn == Black) ||
 			(g.role == "client" && g.currentTurn == White)
-
 		if !isMyTurn && !g.undoPending && !g.undoRequested &&
 			g.lastMover == g.whoAmI() {
 			g.undoRequested = true
@@ -562,6 +563,22 @@ func (g *Game) undoMove() {
 			_ = sendUndoRequest(g.conn)
 		}
 		return
+
+	default:
+		steps := 1
+		if g.playMode == HumanVsAI && len(g.moveHistory) >= 2 {
+			steps = 2
+		}
+		for i := 0; i < steps; i++ {
+			if len(g.moveHistory) == 0 {
+				break
+			}
+			last := g.moveHistory[len(g.moveHistory)-1]
+			g.board[last[0]][last[1]] = Empty
+			g.moveHistory = g.moveHistory[:len(g.moveHistory)-1]
+			g.moves--
+			g.currentTurn = 3 - g.currentTurn
+		}
 	}
 }
 
