@@ -31,6 +31,10 @@ type Game struct {
 	foundRooms       []RoomInfo
 	selectedIdx      int
 	lanReceivedMoves chan [2]int
+	undoRequested    bool
+	undoPending      bool
+	undoResponseCh   chan bool
+	lastMover        Stone
 }
 
 func NewGame() *Game {
@@ -55,22 +59,35 @@ func (g *Game) Reset(mode PlayMode) {
 	if mode == HumanVsLAN && g.conn != nil {
 		g.lanReceivedMoves = make(chan [2]int, 10)
 
+		g.undoResponseCh = make(chan bool, 1)
+
 		go func() {
 			for {
 				if g.conn == nil {
 					return
 				}
-				row, col, err := recvMove(g.conn)
+				row, col, op, err := recvMessage(g.conn)
 				if err != nil {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 						continue
 					}
-					fmt.Println("recvMove error:", err)
+					fmt.Println("recvMessage error:", err)
 					g.lanState = "failed"
 					return
 				}
-				fmt.Printf("[RECV] Client received: (%d, %d)\n", row, col)
-				g.lanReceivedMoves <- [2]int{row, col}
+				switch op {
+				case "MOVE":
+					g.lanReceivedMoves <- [2]int{row, col}
+				case "UNDO_REQUEST":
+					g.undoPending = true
+					g.undoRequested = false
+				case "UNDO_ACCEPT":
+					g.undoResponseCh <- true
+				case "UNDO_REJECT":
+					g.undoResponseCh <- false
+				case "PEER_LEFT":
+					g.lanState = "peerLeft"
+				}
 			}
 		}()
 	}
@@ -133,6 +150,12 @@ func (g *Game) Update() error {
 		}
 
 	case StatePlaying:
+		if g.playMode == HumanVsLAN && g.lanState == "peerLeft" {
+			if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+				g.state = StateModeSelect
+			}
+			return nil
+		}
 		if g.playMode == HumanVsAI && g.currentTurn == White && !g.pendingAI && g.winner == Empty {
 			g.pendingAI = true
 		}
@@ -150,6 +173,7 @@ func (g *Game) Update() error {
 		}
 
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+			g.cleanupLAN()
 			g.state = StateModeSelect
 			return nil
 		}
@@ -180,6 +204,29 @@ func (g *Game) Update() error {
 					fmt.Printf("[RECV] %s received: (%d,%d)\n", g.role, move[0], move[1])
 				default:
 				}
+			}
+			if g.undoPending && g.undoRequested {
+				select {
+				case accept := <-g.undoResponseCh:
+					g.undoPending = false
+					if accept {
+						g.undoLastMove()
+					}
+				default:
+					return nil
+				}
+			}
+
+			if g.undoPending && !g.undoRequested {
+				if inpututil.IsKeyJustPressed(ebiten.KeyY) {
+					sendUndoAccept(g.conn)
+					g.undoLastMove()
+					g.undoPending = false
+				} else if inpututil.IsKeyJustPressed(ebiten.KeyN) {
+					sendUndoReject(g.conn)
+					g.undoPending = false
+				}
+				return nil
 			}
 		}
 
@@ -220,7 +267,6 @@ func (g *Game) Update() error {
 					g.lanState = "failed"
 					return
 				}
-
 				g.conn = conn
 				g.role = "host"
 				g.Reset(HumanVsLAN)
@@ -230,12 +276,22 @@ func (g *Game) Update() error {
 						if g.conn == nil {
 							break
 						}
-						row, col, err := recvMove(g.conn)
+						row, col, op, err := recvMessage(g.conn)
 						if err != nil {
 							g.lanState = "failed"
 							break
 						}
-						g.lanReceivedMoves <- [2]int{row, col}
+						switch op {
+						case "MOVE":
+							g.lanReceivedMoves <- [2]int{row, col}
+						case "UNDO_REQUEST":
+							g.undoPending = true
+							g.undoRequested = false
+						case "UNDO_ACCEPT":
+							g.undoResponseCh <- true
+						case "UNDO_REJECT":
+							g.undoResponseCh <- false
+						}
 					}
 				}()
 			}()
@@ -266,10 +322,35 @@ func (g *Game) Update() error {
 				g.conn = conn
 				g.role = "client"
 				g.Reset(HumanVsLAN)
+
+				go func() {
+					for {
+						if g.conn == nil {
+							break
+						}
+						row, col, op, err := recvMessage(g.conn)
+						if err != nil {
+							g.lanState = "failed"
+							break
+						}
+						switch op {
+						case "MOVE":
+							g.lanReceivedMoves <- [2]int{row, col}
+						case "UNDO_REQUEST":
+							g.undoPending = true
+							g.undoRequested = false
+						case "UNDO_ACCEPT":
+							g.undoResponseCh <- true
+						case "UNDO_REJECT":
+							g.undoResponseCh <- false
+						}
+					}
+				}()
 			}
 		}
 
 		if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+			g.cleanupLAN()
 			g.state = StateModeSelect
 			g.conn = nil
 			g.role = ""
@@ -286,6 +367,9 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) handlePlayerMove() {
+	if g.undoPending {
+		return
+	}
 	x, y := ebiten.CursorPosition()
 	col := int(math.Round((float64(x) - Margin) / TileSize))
 	row := int(math.Round((float64(y) - Margin) / TileSize))
@@ -314,7 +398,7 @@ func (g *Game) placeStoneAt(row, col int) {
 		sendMove(g.conn, row, col)
 		fmt.Printf("[SEND] %s sent: (%d,%d)\n", g.role, row, col)
 	}
-
+	g.lastMover = g.currentTurn
 	if g.checkWin(row, col) {
 		g.winner = g.currentTurn
 		g.state = StateGameOver
@@ -387,6 +471,50 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	case StatePlaying:
 		g.drawBoard(screen)
 		g.drawStatus(screen)
+		if g.undoPending {
+			ebitenutil.DrawRect(screen, 0, 0,
+				float64(WindowWidth), float64(WindowHeight),
+				color.RGBA{0, 0, 0, 180})
+
+			drawSmallCenter := func(lines []string) {
+				scale := 0.5
+				lineH := int(float64(utils.MplusFont.Metrics().Height>>6) * scale)
+				totalH := lineH * len(lines)
+				startY := (WindowHeight - totalH) / 2
+
+				for i, txt := range lines {
+					b := text.BoundString(utils.MplusFont, txt)
+					img := ebiten.NewImage(b.Dx(), b.Dy())
+					img.Fill(color.Transparent)
+					text.Draw(img, txt, utils.MplusFont, 0, b.Dy(), color.White)
+
+					op := &ebiten.DrawImageOptions{}
+					op.GeoM.Scale(scale, scale)
+					op.GeoM.Translate(
+						float64(WindowWidth/2)-float64(b.Dx())*scale/2,
+						float64(startY+i*lineH),
+					)
+					screen.DrawImage(img, op)
+				}
+			}
+			if g.playMode == HumanVsLAN && g.lanState == "peerLeft" {
+				ebitenutil.DrawRect(screen, 0, 0,
+					float64(WindowWidth), float64(WindowHeight),
+					color.RGBA{0, 0, 0, 180})
+				drawSmallCenter([]string{
+					"Opponent has left the game",
+					"Click anywhere to return to menu",
+				})
+			}
+			if g.undoRequested {
+				drawSmallCenter([]string{"Waiting for opponent to accept undo..."})
+			} else {
+				drawSmallCenter([]string{
+					"Opponent wants to undo last move",
+					"Press [Y] to accept  |  [N] to reject",
+				})
+			}
+		}
 	case StateGameOver:
 		g.drawBoard(screen)
 		g.drawGameOver(screen)
@@ -413,21 +541,27 @@ func (g *Game) drawBoard(screen *ebiten.Image) {
 		}
 	}
 }
+func (g *Game) whoAmI() Stone {
+	if g.role == "host" {
+		return Black
+	}
+	return White
+}
 func (g *Game) undoMove() {
 	if g.state != StatePlaying || len(g.moveHistory) == 0 {
 		return
 	}
-	steps := 1
-	if g.playMode == HumanVsAI && len(g.moveHistory) >= 2 {
-		steps = 2
-	}
+	if g.playMode == HumanVsLAN {
+		isMyTurn := (g.role == "host" && g.currentTurn == Black) ||
+			(g.role == "client" && g.currentTurn == White)
 
-	for i := 0; i < steps; i++ {
-		last := g.moveHistory[len(g.moveHistory)-1]
-		g.board[last[0]][last[1]] = Empty
-		g.moveHistory = g.moveHistory[:len(g.moveHistory)-1]
-		g.moves--
-		g.currentTurn = 3 - g.currentTurn
+		if !isMyTurn && !g.undoPending && !g.undoRequested &&
+			g.lastMover == g.whoAmI() {
+			g.undoRequested = true
+			g.undoPending = true
+			_ = sendUndoRequest(g.conn)
+		}
+		return
 	}
 }
 
@@ -484,6 +618,17 @@ func (g *Game) drawModeSelect(screen *ebiten.Image) {
 	}
 }
 
+func (g *Game) undoLastMove() {
+	if len(g.moveHistory) == 0 {
+		return
+	}
+	last := g.moveHistory[len(g.moveHistory)-1]
+	g.board[last[0]][last[1]] = Empty
+	g.moveHistory = g.moveHistory[:len(g.moveHistory)-1]
+	g.moves--
+	g.currentTurn = 3 - g.currentTurn
+}
+
 func (g *Game) drawLANConnect(screen *ebiten.Image) {
 	title := "LAN Battle"
 	tw := text.BoundString(utils.MplusFont, title).Dx()
@@ -525,7 +670,7 @@ func (g *Game) drawLANConnect(screen *ebiten.Image) {
 		}
 
 	case "failed":
-		drawScaledText("Connection failed. Check network or host.", leftMargin, y, color.RGBA{255, 100, 100, 255})
+		drawScaledText("Connection failed", leftMargin, y, color.RGBA{255, 100, 100, 255})
 	default:
 		drawScaledText("Press [H] to HOST a game", leftMargin, y, color.White)
 		y += int(30 * scale)
@@ -533,6 +678,16 @@ func (g *Game) drawLANConnect(screen *ebiten.Image) {
 	}
 
 	drawScaledText("ESC: Back to menu", leftMargin, WindowHeight-40, color.Gray{150})
+}
+
+func (g *Game) cleanupLAN() {
+	if g.conn != nil {
+		_ = g.conn.Close()
+		g.conn = nil
+	}
+	g.role = ""
+	g.lanState = ""
+	g.foundRooms = nil
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {

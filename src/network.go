@@ -21,6 +21,31 @@ type RoomInfo struct {
 	Port int
 }
 
+// 新增 3 个结构体用于悔棋
+type UndoRequestMsg struct {
+	Undo bool `json:"undo"`
+}
+
+type UndoAcceptMsg struct {
+	UndoAccept bool `json:"undoAccept"`
+}
+
+type UndoRejectMsg struct {
+	UndoReject bool `json:"undoReject"`
+}
+
+func sendUndoRequest(conn net.Conn) error {
+	return json.NewEncoder(conn).Encode(UndoRequestMsg{Undo: true})
+}
+
+func sendUndoAccept(conn net.Conn) error {
+	return json.NewEncoder(conn).Encode(UndoAcceptMsg{UndoAccept: true})
+}
+
+func sendUndoReject(conn net.Conn) error {
+	return json.NewEncoder(conn).Encode(UndoRejectMsg{UndoReject: true})
+}
+
 func HostGame() (net.Conn, error) {
 	ln, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -77,7 +102,7 @@ func DiscoverRooms(timeout time.Duration) ([]RoomInfo, error) {
 	return out, nil
 }
 func JoinRoom(room RoomInfo) (net.Conn, error) {
-	addr := fmt.Sprintf("%s:%d", room.IP, room.Port)
+	addr := net.JoinHostPort(room.IP, strconv.Itoa(room.Port))
 	return net.Dial("tcp", addr)
 }
 func localIP() string {
@@ -93,18 +118,34 @@ func localIP() string {
 }
 
 func sendMove(conn net.Conn, row, col int) error {
+	fmt.Printf("[SEND] Row=%d Col=%d\n", row, col)
 	return json.NewEncoder(conn).Encode(NetMsg{Row: row, Col: col})
 }
 
-func recvMove(conn net.Conn) (int, int, error) {
+func recvMessage(conn net.Conn) (int, int, string, error) {
 	conn.SetReadDeadline(time.Now().Add(1 * time.Second))
-
-	var msg NetMsg
-	err := json.NewDecoder(conn).Decode(&msg)
-	if err != nil {
-		return 0, 0, err
+	var raw json.RawMessage
+	if err := json.NewDecoder(conn).Decode(&raw); err != nil {
+		return 0, 0, "PEER_LEFT", err
 	}
 
-	// fmt.Printf("[RECV] received move: (%d, %d)\n", msg.Row, msg.Col)
-	return msg.Row, msg.Col, nil
+	var undoReq UndoRequestMsg
+	if json.Unmarshal(raw, &undoReq) == nil && undoReq.Undo {
+		return 0, 0, "UNDO_REQUEST", nil
+	}
+	var undoAcc UndoAcceptMsg
+	if json.Unmarshal(raw, &undoAcc) == nil && undoAcc.UndoAccept {
+		return 0, 0, "UNDO_ACCEPT", nil
+	}
+	var undoRej UndoRejectMsg
+	if json.Unmarshal(raw, &undoRej) == nil && undoRej.UndoReject {
+		return 0, 0, "UNDO_REJECT", nil
+	}
+
+	var move NetMsg
+	if json.Unmarshal(raw, &move) == nil {
+		return move.Row, move.Col, "MOVE", nil
+	}
+
+	return 0, 0, "PEER_LEFT", nil
 }
