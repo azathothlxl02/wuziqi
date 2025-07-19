@@ -644,6 +644,7 @@ func (g *Game) undoLastMove() {
 	g.moveHistory = g.moveHistory[:len(g.moveHistory)-1]
 	g.moves--
 	g.currentTurn = 3 - g.currentTurn
+	g.lastMover = g.currentTurn
 }
 
 func (g *Game) drawLANConnect(screen *ebiten.Image) {
