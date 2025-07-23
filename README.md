@@ -1,37 +1,55 @@
-=======
-# Gomoku - Go + Ebitengine Project
+# Gomoku — A LAN-Enabled Gomoku Game in Go with Ebitengine
 
-A graphical Gomoku (Five-in-a-Row) game developed using Go and the [Ebitengine (Ebiten)](https://ebitengine.org/en/) game framework.
+Gomoku is a classic board game (Five-in-a-Row) where players take turns placing black or white stones on a grid.  
+This project implements a graphical version of Gomoku using the [Ebitengine (Ebiten)](https://ebitengine.org/en/) game engine in Go.
 
-This is a team-based course project that follows Agile development with multiple feature releases.
+It is developed as part of a team-based software engineering course project using Agile methodology.  
+Key features include AI difficulty levels, LAN multiplayer support, undo functionality, and clean UI.
 
 ---
 
 ## Game Overview
 
-Gomoku is a traditional two-player game where players take turns placing stones on a board. The goal is to form a continuous line of a set number of stones (3–5) to win.
+Gomoku is a traditional two-player strategy game in which players take turns placing stones on a board.  
+The objective is to form an unbroken line of 3 to 5 stones horizontally, vertically, or diagonally to win.
 
 ---
 
 ## Technologies Used
 
 - **Programming Language**: Go (Golang)
-- **Game Engine**: [Ebitengine](https://ebitengine.org/en/)
-- **Others**: Go modules, Ebiten audio/image packages
+- **Game Engine**: [Ebitengine (Ebiten)](https://ebitengine.org/en/)
+- **Other Tools**:
+  - Go modules
+  - Ebiten audio/image packages
+  - `net` package for LAN communication
+  - `encoding/json` for multiplayer message synchronization
 
 ---
 
 ## Getting Started
 
-### 1. Install Go
-https://golang.org/doc/install
+### 1. Install Go  
+Follow the official instructions: https://golang.org/doc/install  
+**Recommended version**: Go 1.21+
 
 ### 2. Clone the project
 ```bash
 git clone https://github.com/yourusername/gomoku-ebiten
 cd gomoku-ebiten
-
 ```
+
+### 3. Run the game
+```bash
+go run main.go
+```
+
+### 4. Build a standalone executable
+```bash
+go build -o gomoku
+```
+
+---
 
 ## Releases
 
@@ -101,12 +119,3 @@ cd gomoku-ebiten
 - UI/UX polish and layout improvement
 - Code optimization and cleanup
 - Planned: Export standalone executable
-
----
-
-## Build Instructions
-
-To generate a standalone executable:
-
-```bash
-go build -o gomoku
