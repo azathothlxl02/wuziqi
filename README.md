@@ -54,10 +54,10 @@ cd gomoku-ebiten
 **Goal**: Implement player vs computer mode and enhance gameplay control.
 
 #### Features
-- Player vs CPU (EVE) mode: simple AI takes turns with the player
+- Player vs CPU (PVE) mode: The player can play with a simple AI 
 - Regret/Undo function: undo the previous move
 - In-game Restart and Exit buttons
-- Improved turn control and stone validation logic
+- The improved turn control and stone validation logic
 
 ---
 
@@ -66,7 +66,6 @@ cd gomoku-ebiten
 **Goal**: Improve game experience and allow more flexible win rules.
 
 #### Features
-- Customizable win condition: set 3 to 5 consecutive stones to win
 - Highlight opponent's last move
 - Optional background music (planned)
 - Exportable game binary (planned)
