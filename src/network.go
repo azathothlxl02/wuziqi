@@ -21,7 +21,6 @@ type RoomInfo struct {
 	Port int
 }
 
-// 新增 3 个结构体用于悔棋
 type UndoRequestMsg struct {
 	Undo bool `json:"undo"`
 }
