@@ -44,8 +44,8 @@ cd gomoku-ebiten
 - Local two-player (PVP) mode: alternate turns between black and white players
 - Turn management logic
 - Win condition: judge and announce winner when a player gets 5 in a row
-- Display current turn
-- Game end screen with result
+- Display the current turn
+- Game ending screen
 
 ---
 
