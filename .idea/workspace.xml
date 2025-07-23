@@ -6,8 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="8584493f-fb34-4c3e-bec1-e668c331e295" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/game.go" beforeDir="false" afterPath="$PROJECT_DIR$/src/game.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -56,7 +54,7 @@
       <option name="presentableId" value="Default" />
       <updated>1752623789351</updated>
       <workItem from="1752623790759" duration="1272000" />
-      <workItem from="1753231946419" duration="2300000" />
+      <workItem from="1753231946419" duration="3630000" />
     </task>
     <servers />
   </component>

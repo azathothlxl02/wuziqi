@@ -49,9 +49,9 @@ type Game struct {
 	audioContext *audio.Context
 	bgmPlayer    *audio.Player
 	stonePlayer  *audio.Player
+	masterVolume float64
 }
 
-// initAudio loads and prepares the audio players for BGM and sound effects.
 func (g *Game) initAudio() {
 	g.audioContext = audio.NewContext(48000)
 
@@ -66,7 +66,8 @@ func (g *Game) initAudio() {
 			if err != nil {
 				log.Printf("audio warning: failed to create bgm player: %v\n", err)
 			} else {
-				g.bgmPlayer.SetVolume(0.1)
+				// Use master volume (BGM is quieter)
+				g.bgmPlayer.SetVolume(g.masterVolume * 0.5)
 				g.bgmPlayer.Play()
 			}
 		}
@@ -86,7 +87,8 @@ func (g *Game) initAudio() {
 		if err != nil {
 			log.Printf("audio warning: failed to create stone sfx player: %v\n", err)
 		} else {
-			g.stonePlayer.SetVolume(0.5)
+			// Use master volume
+			g.stonePlayer.SetVolume(g.masterVolume)
 		}
 	}
 }
@@ -96,8 +98,9 @@ func NewGame() *Game {
 	g := &Game{
 		state:            StateModeSelect,
 		lanReceivedMoves: make(chan [2]int, 10),
+		masterVolume:     0.5, // Default volume is 50%
 	}
-	g.initAudio() // Initialize and start playing audio
+	g.initAudio()
 	return g
 }
 
@@ -206,11 +209,42 @@ func (g *Game) Update() error {
 		}
 
 	case StatePlaying:
-		if g.playMode == HumanVsLAN && g.lanState == "peerLeft" {
-			if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-				g.state = StateModeSelect
+				volumeChanged := false
+		// Check for volume up keys
+		if inpututil.IsKeyJustPressed(ebiten.KeyNumpadAdd) || inpututil.IsKeyJustPressed(ebiten.KeyEqual) {
+			g.masterVolume += 0.1
+			volumeChanged = true
+		}
+		// Check for volume down keys
+		if inpututil.IsKeyJustPressed(ebiten.KeyNumpadSubtract) || inpututil.IsKeyJustPressed(ebiten.KeyMinus) {
+			g.masterVolume -= 0.1
+			volumeChanged = true
+		}
+
+		if volumeChanged {
+			// Clamp volume between 0.0 and 1.0
+			if g.masterVolume > 1.0 {
+				g.masterVolume = 1.0
 			}
-			return nil
+			if g.masterVolume < 0.0 {
+				g.masterVolume = 0.0
+			}
+
+			// Apply new volume to players
+			if g.bgmPlayer != nil {
+				g.bgmPlayer.SetVolume(g.masterVolume * 0.5)
+			}
+			if g.stonePlayer != nil {
+				g.stonePlayer.SetVolume(g.masterVolume)
+			}
+
+			// Apply new volume to players
+			if g.bgmPlayer != nil {
+				g.bgmPlayer.SetVolume(g.masterVolume * 0.5)
+			}
+			if g.stonePlayer != nil {
+				g.stonePlayer.SetVolume(g.masterVolume)
+			}
 		}
 		if g.playMode == HumanVsAI && g.currentTurn == White && !g.pendingAI && g.winner == Empty {
 			g.pendingAI = true
@@ -647,11 +681,39 @@ func (g *Game) undoMove() {
 }
 
 func (g *Game) drawStatus(screen *ebiten.Image) {
+	scale := 0.7
+	margin := 20.0
+	statusTexts := []string{
+		fmt.Sprintf("Volume: %d%% (+/-)", int(g.masterVolume*100)),
+		"ESC: Menu",
+	}
+
+
+	lineHeight := text.BoundString(utils.MplusFont, "A").Dy()
+	scaledLineHeight := float64(lineHeight) * scale * 1.2
+
+	op := &ebiten.DrawImageOptions{}
+	for i, s := range statusTexts {
+		bounds := text.BoundString(utils.MplusFont, s)
+
+		x := float64(WindowWidth) - (float64(bounds.Dx()) * scale) - margin
+		y := margin + (float64(i) * scaledLineHeight)
+
+		op.GeoM.Reset()
+		op.GeoM.Scale(scale, scale)
+		op.GeoM.Translate(x, y)
+
+
+		op.ColorM.Reset()
+		op.ColorM.ScaleWithColor(color.Black)
+
+		text.DrawWithOptions(screen, s, utils.MplusFont, op)
+	}
+
+
 	turnText := "Current Turn: "
 	cx := float64(text.BoundString(utils.MplusFont, turnText).Dx() + 40)
 	cy := float64(WindowWidth + StatusHeight/2)
-	text.Draw(screen, "Press ESC to return menu", utils.MplusFont, 20, WindowHeight-65, color.Black)
-
 	text.Draw(screen, turnText, utils.MplusFont, 20, int(cy+10), color.Black)
 
 	col := color.Black
