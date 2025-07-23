@@ -1,12 +1,14 @@
 package src
 
 import (
-	"bytes" // ADDED
-	_ "embed"
+	"bytes"
+	"embed"
 	"fmt"
 	"image/color"
-	"log" // ADDED
+	"io/fs"
+	"log"
 	"math"
+	"math/rand"
 	"net"
 	"os"
 	"time"
@@ -20,11 +22,12 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
 	"github.com/hajimehoshi/ebiten/v2/audio/wav"
 )
-//go:embed assets/bgm.mp3
-var bgmBytes []byte
 
 //go:embed assets/move.wav
 var stoneBytes []byte
+
+//go:embed assets/bgm/*.mp3
+var bgmFS embed.FS // Embeds the BGM folder
 
 type Game struct {
 	board            [BoardSize][BoardSize]Stone
@@ -50,28 +53,24 @@ type Game struct {
 	bgmPlayer    *audio.Player
 	stonePlayer  *audio.Player
 	masterVolume float64
+	rand         *rand.Rand // ADD THIS
+}
+
+func NewGame() *Game {
+	utils.InitFont()
+	g := &Game{
+		state:            StateModeSelect,
+		lanReceivedMoves: make(chan [2]int, 10),
+		masterVolume:     0.5,
+		rand:             rand.New(rand.NewSource(time.Now().UnixNano())), // Initialize random source
+	}
+	g.initAudio()
+	g.playNewRandomBGM() // Play the first random BGM at launch
+	return g
 }
 
 func (g *Game) initAudio() {
 	g.audioContext = audio.NewContext(48000)
-
-	// --- BGM ---
-	if bgmBytes != nil {
-		bgmStream, err := mp3.DecodeWithSampleRate(g.audioContext.SampleRate(), bytes.NewReader(bgmBytes))
-		if err != nil {
-			log.Printf("audio warning: failed to decode bgm: %v\n", err)
-		} else {
-			bgmLoop := audio.NewInfiniteLoop(bgmStream, bgmStream.Length())
-			g.bgmPlayer, err = g.audioContext.NewPlayer(bgmLoop)
-			if err != nil {
-				log.Printf("audio warning: failed to create bgm player: %v\n", err)
-			} else {
-				// Use master volume (BGM is quieter)
-				g.bgmPlayer.SetVolume(g.masterVolume * 0.5)
-				g.bgmPlayer.Play()
-			}
-		}
-	}
 
 	// --- Stone Sound ---
 	if stoneBytes == nil {
@@ -87,21 +86,51 @@ func (g *Game) initAudio() {
 		if err != nil {
 			log.Printf("audio warning: failed to create stone sfx player: %v\n", err)
 		} else {
-			// Use master volume
 			g.stonePlayer.SetVolume(g.masterVolume)
 		}
 	}
 }
 
-func NewGame() *Game {
-	utils.InitFont()
-	g := &Game{
-		state:            StateModeSelect,
-		lanReceivedMoves: make(chan [2]int, 10),
-		masterVolume:     0.5, // Default volume is 50%
+func (g *Game) playNewRandomBGM() {
+	// Stop and close the previous BGM player, if it exists
+	if g.bgmPlayer != nil {
+		g.bgmPlayer.Close()
 	}
-	g.initAudio()
-	return g
+
+	// Find all .mp3 files in the embedded BGM folder
+	files, err := fs.Glob(bgmFS, "assets/bgm/*.mp3")
+	if err != nil || len(files) == 0 {
+		log.Println("audio warning: no BGM files found in 'src/assets/bgm/'")
+		return
+	}
+
+	// Pick a random track from the list
+	trackPath := files[g.rand.Intn(len(files))]
+	log.Printf("Now Playing BGM: %s", trackPath)
+
+	// Read the file data
+	data, err := bgmFS.ReadFile(trackPath)
+	if err != nil {
+		log.Printf("audio warning: could not read bgm file %s: %v", trackPath, err)
+		return
+	}
+
+	// Decode, create a new player, and play it on a loop
+	stream, err := mp3.DecodeWithSampleRate(g.audioContext.SampleRate(), bytes.NewReader(data))
+	if err != nil {
+		log.Printf("audio warning: failed to decode %s: %v", trackPath, err)
+		return
+	}
+
+	loop := audio.NewInfiniteLoop(stream, stream.Length())
+	g.bgmPlayer, err = g.audioContext.NewPlayer(loop)
+	if err != nil {
+		log.Printf("audio warning: failed to create player for %s: %v", trackPath, err)
+		return
+	}
+
+	g.bgmPlayer.SetVolume(g.masterVolume * 0.5)
+	g.bgmPlayer.Play()
 }
 
 func (g *Game) Reset(mode PlayMode) {
@@ -150,6 +179,7 @@ func (g *Game) Reset(mode PlayMode) {
 			}
 		}()
 	}
+    g.playNewRandomBGM()
 }
 
 func (g *Game) Update() error {
