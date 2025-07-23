@@ -89,6 +89,8 @@ cd gomoku-ebiten
 
 ---
 
+### Release 5 (v5) - Details Improvement
+
 ## Build Instructions
 
 To generate a standalone executable:
