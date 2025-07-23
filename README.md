@@ -72,12 +72,27 @@ cd gomoku-ebiten
 - Exportable game binary (planned)
 - In-game help or README documentation (planned)
 
+---
+
+### Release 4 (v4) - Local Network Multiplayer
+**Release Date**: 2025.7.23  
+**Goal**: Enable real-time Gomoku gameplay between two players over a local network (LAN).
+
+#### Features
+- All features from **v1** to **v3**
+- LAN-based multiplayer mode: two players can connect and play over the same local network
+- Simple JSON-based message protocol for communication
+- Host and client roles: one player creates the game as host, the other joins as client
+- Basic connection logic and turn synchronization using JSON messages
+- Prevent desync due to invalid actions or dropped messages
+
+> Uses Go's `net` package and `encoding/json` to transmit move data such as stone position and player ID.
+
+---
+
 ## Build Instructions
 
 To generate a standalone executable:
 
 ```bash
 go build -o gomoku
-
-```
->>>>>>> main
