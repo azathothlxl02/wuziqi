@@ -1,8 +1,11 @@
 package src
 
 import (
+	"bytes" // ADDED
+	_ "embed"
 	"fmt"
 	"image/color"
+	"log" // ADDED
 	"math"
 	"net"
 	"os"
@@ -13,7 +16,15 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text"
+	"github.com/hajimehoshi/ebiten/v2/audio"
+	"github.com/hajimehoshi/ebiten/v2/audio/mp3"
+	"github.com/hajimehoshi/ebiten/v2/audio/wav"
 )
+//go:embed assets/bgm.mp3
+var bgmBytes []byte
+
+//go:embed assets/move.wav
+var stoneBytes []byte
 
 type Game struct {
 	board            [BoardSize][BoardSize]Stone
@@ -35,14 +46,59 @@ type Game struct {
 	undoPending      bool
 	undoResponseCh   chan bool
 	lastMover        Stone
+	audioContext *audio.Context
+	bgmPlayer    *audio.Player
+	stonePlayer  *audio.Player
+}
+
+// initAudio loads and prepares the audio players for BGM and sound effects.
+func (g *Game) initAudio() {
+	g.audioContext = audio.NewContext(48000)
+
+	// --- BGM ---
+	if bgmBytes != nil {
+		bgmStream, err := mp3.DecodeWithSampleRate(g.audioContext.SampleRate(), bytes.NewReader(bgmBytes))
+		if err != nil {
+			log.Printf("audio warning: failed to decode bgm: %v\n", err)
+		} else {
+			bgmLoop := audio.NewInfiniteLoop(bgmStream, bgmStream.Length())
+			g.bgmPlayer, err = g.audioContext.NewPlayer(bgmLoop)
+			if err != nil {
+				log.Printf("audio warning: failed to create bgm player: %v\n", err)
+			} else {
+				g.bgmPlayer.SetVolume(0.1)
+				g.bgmPlayer.Play()
+			}
+		}
+	}
+
+	// --- Stone Sound ---
+	if stoneBytes == nil {
+		log.Println("audio warning: move.wav file not found. Check that `src/assets/move.wav` exists.")
+		return
+	}
+
+	stoneStream, err := wav.DecodeWithSampleRate(g.audioContext.SampleRate(), bytes.NewReader(stoneBytes))
+	if err != nil {
+		log.Printf("audio warning: failed to decode move.wav (is it a valid WAV file?): %v\n", err)
+	} else {
+		g.stonePlayer, err = g.audioContext.NewPlayer(stoneStream)
+		if err != nil {
+			log.Printf("audio warning: failed to create stone sfx player: %v\n", err)
+		} else {
+			g.stonePlayer.SetVolume(0.5)
+		}
+	}
 }
 
 func NewGame() *Game {
 	utils.InitFont()
-	return &Game{
+	g := &Game{
 		state:            StateModeSelect,
 		lanReceivedMoves: make(chan [2]int, 10),
 	}
+	g.initAudio() // Initialize and start playing audio
+	return g
 }
 
 func (g *Game) Reset(mode PlayMode) {
@@ -393,6 +449,14 @@ func (g *Game) placeStoneAt(row, col int) {
 	g.board[row][col] = g.currentTurn
 	g.moveHistory = append(g.moveHistory, [2]int{row, col})
 	g.moves++
+
+	// --- Play sound effect ---
+	if g.stonePlayer != nil {
+		log.Println("Attempting to play move sound...") // ADD THIS LINE FOR DEBUGGING
+		g.stonePlayer.Rewind()
+		g.stonePlayer.Play()
+	}
+	// --- End of sound effect ---
 
 	if g.playMode == HumanVsLAN && g.conn != nil {
 		sendMove(g.conn, row, col)
